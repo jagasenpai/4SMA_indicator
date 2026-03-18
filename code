@@ -1,0 +1,78 @@
+//@version=6
+indicator("4 SMA Cluster Dashboard", overlay=true, max_labels_count=100)
+
+thresholdPct = input.float(0.1, "4SMA Threshold (%)", step=0.01)
+
+roundToTenth(value) =>
+    math.round(value * 10.0) / 10.0
+
+formatRate(value) =>
+    na(value) ? "na" : str.tostring(roundToTenth(value), "#.0") + "%"
+
+statusText(state) =>
+    state ? "OK" : "--"
+
+statusBg(state) =>
+    state ? color.new(color.lime, 0) : color.new(color.red, 0)
+
+clusterMetrics() =>
+    sma9Local = ta.sma(close, 9)
+    sma21Local = ta.sma(close, 21)
+    sma75Local = ta.sma(close, 75)
+    sma200Local = ta.sma(close, 200)
+
+    validClose = not na(close) and close != 0.0
+    validSmas = not na(sma9Local) and not na(sma21Local) and not na(sma75Local) and not na(sma200Local)
+
+    maxSma = math.max(math.max(sma9Local, sma21Local), math.max(sma75Local, sma200Local))
+    minSma = math.min(math.min(sma9Local, sma21Local), math.min(sma75Local, sma200Local))
+
+    rate4 = (validClose and validSmas) ? ((maxSma - minSma) / close) * 100.0 : na
+    cond4 = not na(rate4) and rate4 <= thresholdPct
+
+    [rate4, cond4]
+
+sma9 = ta.sma(close, 9)
+sma21 = ta.sma(close, 21)
+sma75 = ta.sma(close, 75)
+sma200 = ta.sma(close, 200)
+
+plot(sma9, "SMA 9", color=color.aqua, linewidth=2)
+plot(sma21, "SMA 21", color=color.orange, linewidth=2)
+plot(sma75, "SMA 75", color=color.green, linewidth=2)
+plot(sma200, "SMA 200", color=color.red, linewidth=2)
+
+[rate4_1m, cond4_1m] = request.security(syminfo.tickerid, "1", clusterMetrics(), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+[rate4_5m, cond4_5m] = request.security(syminfo.tickerid, "5", clusterMetrics(), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+
+sync4 = cond4_1m and cond4_5m
+sync4Rise = sync4 and not sync4[1]
+
+plotshape(
+    sync4Rise,
+    title="4SMA Signal",
+    style=shape.triangleup,
+    location=location.belowbar,
+    color=color.lime,
+    size=size.small
+)
+
+alertcondition(sync4Rise, title="1m+5m 4SMA OK", message="1mと5mの4SMAが両方OKです {{ticker}}")
+
+var table dashboard = table.new(position.top_right, 3, 3, border_width=1, frame_color=color.new(color.silver, 30))
+
+if barstate.islast
+    headerBg = color.new(color.black, 0)
+    rowBg = color.new(color.black, 75)
+
+    table.cell(dashboard, 0, 0, "TF", text_color=color.white, bgcolor=headerBg)
+    table.cell(dashboard, 1, 0, "4SMA %", text_color=color.white, bgcolor=headerBg)
+    table.cell(dashboard, 2, 0, "Status", text_color=color.white, bgcolor=headerBg)
+
+    table.cell(dashboard, 0, 1, "1m", text_color=color.white, bgcolor=rowBg)
+    table.cell(dashboard, 1, 1, formatRate(rate4_1m), text_color=color.white, bgcolor=rowBg)
+    table.cell(dashboard, 2, 1, statusText(cond4_1m), text_color=color.white, bgcolor=statusBg(cond4_1m))
+
+    table.cell(dashboard, 0, 2, "5m", text_color=color.white, bgcolor=rowBg)
+    table.cell(dashboard, 1, 2, formatRate(rate4_5m), text_color=color.white, bgcolor=rowBg)
+    table.cell(dashboard, 2, 2, statusText(cond4_5m), text_color=color.white, bgcolor=statusBg(cond4_5m))
